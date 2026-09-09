@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- LT: 앱 데이터가 Android 클라우드 백업이나 기기 전송에 포함되지 않게 한다.
+     선택적인 자체 서버 전송은 사용자가 별도로 설정하고 활성화해야 한다.
+     allowBackup="false" 가 API 30 이하를 막고, 이 파일이 API 31+ 를 막는다.
+     HMAC 시크릿이 EncryptedSharedPreferences 에 들어가므로 클라우드 백업은 반드시 차단한다. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>

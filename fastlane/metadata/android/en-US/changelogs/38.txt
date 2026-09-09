@@ -1,0 +1,7 @@
+- fix: add prominent disclosure before accessibility settings redirect (#215)
+- build: bump NDK to r28 for 16 KB page-size compliance (conflict resolution) (#217)
+- build: bump compileSdk/targetSdk to 36 (Android 16) (#214)
+- feat(sync): bridge SAF-granted URI to aw-sync output (Phase 2) (#209)
+- fix: replace Material attrs with AppCompat in settings activities (#211)
+
+Full changelog: https://github.com/ActivityWatch/aw-android/releases/tag/v0.14.0

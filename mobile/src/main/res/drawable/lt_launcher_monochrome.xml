@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- LT: 상표 회피를 위해 ActivityWatch 로고를 대체한 자체 마크 (MPL §2.3 —
+     상표는 라이선스에 포함되지 않는다). 시계 링 + 바늘. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#00000000" android:strokeColor="#FFFFFF"
+        android:strokeWidth="7" android:strokeLineCap="round"
+        android:pathData="M32,54 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0" />
+    <path android:fillColor="#00000000" android:strokeColor="#FFFFFF"
+        android:strokeWidth="6" android:strokeLineCap="round"
+        android:pathData="M54,54 L54,40" />
+    <path android:fillColor="#00000000" android:strokeColor="#FFFFFF"
+        android:strokeWidth="6" android:strokeLineCap="round"
+        android:pathData="M54,54 L65,59" />
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M54,50.5 a3.5,3.5 0 1,0 0,7 a3.5,3.5 0 1,0 0,-7" />
+</vector>

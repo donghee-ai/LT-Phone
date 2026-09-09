@@ -1,0 +1,162 @@
+apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
+
+android {
+    compileSdk 36
+    ndkVersion "28.2.13676358"
+
+    defaultConfig {
+        applicationId "net.lifetrainer.awphone"
+        minSdkVersion 26
+        targetSdkVersion 36
+
+        // Keep versionName committed so a tagged GitHub release is reproducible.
+        // The workflow verifies that it matches refs/tags/v*.
+        versionName '0.14.0b2'
+
+        // Increment this manually for each public release.
+        versionCode 40
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        // NOTE: This only works for API level 28 and above
+        //testInstrumentationRunnerArguments useTestStorageService: 'true'
+
+        // WARNING: Never commit this uncommented! (leads to huge APKs)
+        //packagingOptions {
+        //    doNotStrip '**/*.so'
+        //}
+    }
+    // LT: release signing. Supply LT_* properties locally or through GitHub Actions secrets.
+    signingConfigs {
+        release {
+            if (project.hasProperty("LT_KEYSTORE")) {
+                storeFile file(LT_KEYSTORE)
+                storePassword LT_STORE_PASS
+                keyAlias LT_KEY_ALIAS
+                keyPassword LT_KEY_PASS
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (project.hasProperty("LT_KEYSTORE")) {
+                signingConfig signingConfigs.release
+            }
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            ndk {
+                debugSymbolLevel 'SYMBOL_TABLE'
+            }
+        }
+        debug {
+            applicationIdSuffix ".debug"
+            jniDebuggable true
+            renderscriptDebuggable true
+            // Limit debug APK to modern ABIs used by CI emulators and physical devices.
+            // armeabi-v7a debug Rust binaries are very large and can corrupt the CI
+            // artifact when disk space is tight; they aren't needed for x86_64 emulator
+            // runs or any arm64-v8a device released since ~2014.
+            ndk {
+                abiFilters 'arm64-v8a', 'x86_64'
+            }
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+        coreLibraryDesugaringEnabled true
+    }
+
+    kotlinOptions {
+        jvmTarget = "11"
+    }
+
+    lint {
+        baseline = file("lint-baseline.xml")
+    }
+
+    namespace 'net.activitywatch.android'
+    // Never got this to work...
+    if (project.hasProperty("doNotStrip")) {
+        println "Configuring doNotStrip for jniLibs"
+        packaging {
+            jniLibs {
+                keepDebugSymbols += "**/*.so"
+            }
+        }
+    }
+
+    // Creates a resource versionName with the full version
+    // https://stackoverflow.com/a/36468650/965332
+    applicationVariants.all { variant ->
+        variant.resValue "string", "versionName", 'v' + variant.versionName
+    }
+
+    buildFeatures {
+        viewBinding true
+    }
+}
+
+dependencies {
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
+
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+
+    implementation 'androidx.appcompat:appcompat:1.7.1'
+    implementation 'androidx.documentfile:documentfile:1.1.0'
+    implementation 'androidx.legacy:legacy-support-v4:1.0.0'
+    implementation 'androidx.cardview:cardview:1.0.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.2.1'
+    implementation 'androidx.recyclerview:recyclerview:1.2.1'
+    implementation 'androidx.lifecycle:lifecycle-extensions:2.2.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
+    implementation 'androidx.annotation:annotation:1.9.1'
+
+    implementation 'com.google.android.material:material:1.13.0'
+    implementation 'com.jakewharton.threetenabp:threetenabp:1.4.9'
+
+    testImplementation "junit:junit:4.13.2"
+    testImplementation 'org.json:json:20231013'
+    androidTestImplementation "androidx.test.ext:junit-ktx:$extJUnitVersion"
+    androidTestImplementation "androidx.test:runner:$androidXTestVersion"
+    androidTestImplementation "androidx.test:rules:$androidXTestVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$espressoVersion"
+    androidTestUtil "androidx.test.services:test-services:$servicesVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-web:$espressoVersion"
+    androidTestImplementation "androidx.browser:browser:1.8.0"
+    androidTestImplementation 'androidx.test.uiautomator:uiautomator:2.3.0'
+    androidTestImplementation('org.awaitility:awaitility:4.3.0') {
+        exclude group: 'org.hamcrest', module: 'hamcrest'
+    }
+
+    // WorkManager
+    implementation "androidx.work:work-runtime-ktx:2.9.1"
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+}
+
+// Can be used to build with: ./gradlew cargoBuild
+// NOTE: Doesn't work, chokes on building openssl-sys
+apply plugin: 'org.mozilla.rust-android-gradle.rust-android'
+
+cargo {
+    module  = "../aw-server-rust"       // Or whatever directory contains your Cargo.toml
+    libname = "aw_server"          // Or whatever matches Cargo.toml's [package] name.
+    targets = ["arm", "arm64", "x86", "x86_64"]  // See bellow for a longer list of options
+    profile = 'release'  // Selects the Cargo release profile (defaults to 'debug')
+}
+
+tasks.whenTaskAdded { task ->
+    // TODO: Build aw-server lib here instead of in Makefile?
+    // Doesn't work, chokes on building openssl-sys
+    //if ((task.name == 'javaPreCompileDebug' || task.name == 'javaPreCompileRelease')) {
+    //    task.dependsOn 'cargoBuild'
+    //}
+
+    // TODO: Build aw-webui here?
+    //if (task.name.contains("assembleRelease")) {
+    //    task.getDependsOn().add({
+    //        // add your logic here
+    //    })
+    //}
+}

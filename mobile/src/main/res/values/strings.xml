@@ -1,0 +1,80 @@
+<resources>
+    <string name="app_name">LT Phone</string>
+    <string name="navigation_drawer_open">Open navigation drawer</string>
+    <string name="navigation_drawer_close">Close navigation drawer</string>
+    <string name="nav_header_title">ActivityWatch for Android</string>
+    <string name="nav_header_subtitle">v0.1.0</string>
+    <string name="nav_header_desc">Navigation header</string>
+    <string name="action_settings">Settings</string>
+    <string name="dashboard_settings">Dashboard Settings</string>
+    <string name="api_authentication">API Authentication</string>
+    <string name="sync_settings">Sync Settings</string>
+    <string name="open_in_browser">Open in browser</string>
+    <string name="title_activity_buckets">BucketsActivity</string>
+    <string name="welcome_title_text">Welcome, early user!</string>
+    <string name="welcome_text">
+        "Thanks for trying out ActivityWatch for Android!"
+        "It\'s not quite as matured as ActivityWatch on other platforms, but it\'s a great step in the right direction and we think it's ready enough to put out there!"
+
+        "\n\n<b>To get started</b>, open the drawer menu in the top left and click on "Activity".
+
+        "\n\n<b>The next step for us</b> is to get cross-device synchronization in place, but it might take a while since we really want to get it right."
+
+        "\n<b>If you\'re new to ActivityWatch</b>, you should also check out the <a href='https://activitywatch.net/'>desktop version of ActivityWatch</a>."
+    </string>
+    <string name="button_log_text">Click me to log data!</string>
+    <string name="accessibility_service_description">Allows ActivityWatch to read the URL and title from your browser.</string>
+
+    <!-- Prominent disclosure required by the Google Play Accessibility API policy:
+         must be shown and affirmatively accepted BEFORE directing the user to
+         enable the accessibility service. -->
+    <string name="accessibility_disclosure_title">Web browsing tracking</string>
+    <string name="accessibility_disclosure_message">To track your web browsing activity, LT Phone uses Android\'s Accessibility API to read the URL and page title from your browser while you browse.\n\nThis data is stored on your device. It is not sent to the app developers, advertising services, or analytics services. If you explicitly configure and enable self-hosted push, it is also sent to the server address you provide.\n\nIf you agree, enable LT Phone under Accessibility settings on the next screen. This is optional — the rest of the app works without it.</string>
+    <string name="accessibility_disclosure_agree">Agree</string>
+    <string name="accessibility_disclosure_decline">No thanks</string>
+
+    <!-- This is overridden by gradle config
+    <string name="versionName">unknown version</string>-->
+
+    <!-- TODO: Remove or change this placeholder text -->
+    <string name="hello_blank_fragment">Hello blank fragment</string>
+
+    <!-- Widget strings -->
+    <string name="widget_category_time_description">Shows today\'s screen time and top categories</string>
+
+    <!-- Auth strings -->
+    <string name="no_browser_found">No browser app available to open this URL</string>
+    <string name="export_saved">Saved %1$s</string>
+    <string name="export_save_failed">Could not save export</string>
+
+    <!-- LT: 자가 호스팅 서버 push 설정 -->
+    <string name="lt_push_title">Life Trainer push</string>
+    <string name="lt_push_enable">자가 호스팅 서버로 전송</string>
+    <string name="lt_push_device_label">기기 이름 (서버에 등록된 이름과 정확히 같아야 한다)</string>
+    <string name="lt_push_device_hint">예: example-phone</string>
+
+    <!-- 프라이빗 모드 (빠른 설정 타일) -->
+    <string name="private_tile_label">프라이빗</string>
+    <string name="private_tile_off">기록 중</string>
+    <string name="private_tile_remaining">%1$d분 남음</string>
+    <string name="lt_push_url_label">호환 서버 주소 (HTTPS 권장)</string>
+    <string name="lt_push_url_hint">https://lt.example.com</string>
+    <string name="lt_push_secret_label">서버와 공유하는 HMAC 비밀값</string>
+    <string name="lt_push_secret_hint">비워 두면 기존 값 유지</string>
+    <string name="lt_push_interval_label">전송 주기 (분)</string>
+    <string name="lt_push_save">저장</string>
+    <string name="lt_push_test">지금 보내기</string>
+    <string name="lt_push_saved">저장했습니다</string>
+    <string name="lt_push_testing">보내는 중…</string>
+    <string name="lt_push_status_none">아직 설정되지 않음</string>
+    <string name="lt_push_status_incomplete">기기 이름·주소·시크릿을 모두 넣어야 한다</string>
+    <string name="lt_push_status_off">설정됨 (전송 꺼짐)</string>
+    <string name="lt_push_status_on">전송 중 — %1$d분마다</string>
+    <string name="lt_push_help">서버가 등록된 기기 이름과 LT1 HMAC 인증을 지원해야 한다.
+
+주소는 **https** 여야 한다. 이 앱은 평문 HTTP 를 127.0.0.1 외에는 막아 두었다 — 기록에 창 제목이 담기므로 망에 그대로 흘리지 않는다.
+
+비밀값은 서버에서 안전하게 생성하고 앱과 서버에만 보관한다. 저장소나 로그에 넣지 않는다.
+
+401 이 나면 서버가 사유를 그대로 돌려준다. \"시각\" 이야기가 나오면 시크릿은 맞고 폰 시계가 틀린 것이다.</string>
+</resources>

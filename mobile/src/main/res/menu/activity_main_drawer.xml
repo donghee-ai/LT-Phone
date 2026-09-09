@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+      xmlns:tools="http://schemas.android.com/tools"
+      tools:showIn="navigation_view">
+
+    <group android:checkableBehavior="single">
+        <item
+            android:id="@+id/nav_dashboard"
+            android:icon="@drawable/ic_menu_slideshow"
+            android:title="Home" />
+        <item
+            android:id="@+id/nav_activity"
+            android:icon="?attr/actionModeCopyDrawable"
+            android:title="Activity" />
+        <item
+            android:id="@+id/nav_buckets"
+            android:icon="?attr/actionModeCopyDrawable"
+            android:title="Raw Data" />
+    </group>
+
+    <item android:title="Misc">
+        <menu>
+            <group>
+                <item
+                        android:id="@+id/nav_settings"
+                        android:icon="@drawable/ic_menu_manage"
+                        android:title="@string/dashboard_settings"/>
+                <item
+                        android:id="@+id/nav_auth_settings"
+                        android:icon="@drawable/ic_menu_manage"
+                        android:title="@string/api_authentication"/>
+                <item
+                        android:id="@+id/nav_sync_settings"
+                        android:icon="@drawable/ic_menu_manage"
+                        android:title="@string/sync_settings"/>
+                <!-- LT: 서버 push 설정 -->
+                <item
+                        android:id="@+id/nav_lt_push_settings"
+                        android:icon="@drawable/ic_menu_manage"
+                        android:title="@string/lt_push_title"/>
+                <item
+                        android:id="@+id/nav_share"
+                        android:icon="@drawable/ic_menu_share"
+                        android:title="@string/open_in_browser"/>
+                <item
+                        android:id="@+id/nav_send"
+                        android:icon="@drawable/ic_menu_send"
+                        android:title="Report bugs"/>
+            </group>
+        </menu>
+    </item>
+
+</menu>
