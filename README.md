@@ -28,14 +28,57 @@ blob 해시로 대조하면 포크에만 있는 파일이 33개이고, 업스트
 업스트림에서 이어받은 코드는 ActivityWatch 기여자에게, 아래 추가 파일과 변경분은 LT Phone 포크에
 귀속됩니다.
 
-| 작업 영역 | LT Phone에서 구현한 내용 | 주요 파일 |
-|---|---|---|
-| 브라우저 기록 정확도 | URL보다 먼저 도착하는 창 제목을 시간 기준으로 확정해 이전 페이지에 잘못 붙는 문제를 방지하고, 주소창 안내 문구·검색어를 URL에서 제외했습니다. 창 제목 조회와 URL 기록을 접근성 콜백의 메인 스레드에서 분리했습니다. | [`BrowserSessionTracker.kt`](mobile/src/main/java/net/activitywatch/android/watcher/BrowserSessionTracker.kt), [`UrlExtraction.kt`](mobile/src/main/java/net/activitywatch/android/watcher/UrlExtraction.kt), [`WebWatcher.kt`](mobile/src/main/java/net/activitywatch/android/watcher/WebWatcher.kt) |
-| 앱·세션·미디어 수집 | 앱 사용 세션 파싱과 수집 주기를 보완하고, 화면·잠금 상태 기반 AFK 기록을 추가했습니다. 미디어 상태 처리와 YouTube Shorts 구간 기록도 보완했습니다. | [`SessionParser.kt`](mobile/src/main/java/net/activitywatch/android/parser/SessionParser.kt), [`UsageStatsWatcher.kt`](mobile/src/main/java/net/activitywatch/android/watcher/UsageStatsWatcher.kt), [`InteractionWatcher.kt`](mobile/src/main/java/net/activitywatch/android/watcher/InteractionWatcher.kt), [`MediaWatcher.kt`](mobile/src/main/java/net/activitywatch/android/watcher/MediaWatcher.kt) |
-| 프라이버시 모드 | 지정 시간 동안 민감한 watcher의 조회·기록을 막고 해당 구간을 정리하며, 만료 예약과 빠른 설정 타일을 제공합니다. | [`privacy/`](mobile/src/main/java/net/activitywatch/android/privacy/)의 신규 Kotlin 파일 7개 |
-| 선택적 서버 전송 | 사용자가 직접 설정한 서버에만 증분 전송하며, HMAC-SHA256 인증, 재시도·커서 관리, Android Keystore 기반 비밀값 보호를 구현했습니다. | [`push/`](mobile/src/main/java/net/activitywatch/android/push/)의 신규 Kotlin 파일 6개, [`PROTOCOL.md`](lt-docs/PROTOCOL.md) |
-| 상태 점검과 수명 관리 | watcher가 실제 이벤트를 만들고 있는지 확인하는 상태 점검을 추가하고, 백그라운드 서비스·알람·작업 스케줄링을 연결했습니다. | [`WatcherHealth.kt`](mobile/src/main/java/net/activitywatch/android/watcher/WatcherHealth.kt), [`BackgroundService.kt`](mobile/src/main/java/net/activitywatch/android/BackgroundService.kt), [`AlarmReceiver.kt`](mobile/src/main/java/net/activitywatch/android/watcher/AlarmReceiver.kt) |
-| 공개·배포 정리 | 앱 ID와 브랜딩을 분리하고, Android 백업을 비활성화했으며, 테스트·빌드·설치·개인정보·릴리즈 문서와 배포 정제 스크립트를 추가했습니다. | [`AndroidManifest.xml`](mobile/src/main/AndroidManifest.xml), [`BUILDING.md`](BUILDING.md), [`PRIVACY.md`](PRIVACY.md), [`RELEASE.md`](RELEASE.md), [`lt-docs/`](lt-docs/) |
+- **브라우저 기록 정확도**
+
+  URL보다 먼저 도착하는 창 제목을 시간 기준으로 확정해 이전 페이지에 잘못 붙는 문제를 방지하고,
+  주소창 안내 문구·검색어를 URL에서 제외했습니다. 창 제목 조회와 URL 기록도 접근성 콜백의 메인
+  스레드에서 분리했습니다.
+
+  주요 파일: [`BrowserSessionTracker.kt`](mobile/src/main/java/net/activitywatch/android/watcher/BrowserSessionTracker.kt),
+  [`UrlExtraction.kt`](mobile/src/main/java/net/activitywatch/android/watcher/UrlExtraction.kt),
+  [`WebWatcher.kt`](mobile/src/main/java/net/activitywatch/android/watcher/WebWatcher.kt)
+
+- **앱·세션·미디어 수집**
+
+  앱 사용 세션 파싱과 수집 주기를 보완하고, 화면·잠금 상태 기반 AFK 기록을 추가했습니다. 미디어
+  상태 처리와 YouTube Shorts 구간 기록도 보완했습니다.
+
+  주요 파일: [`SessionParser.kt`](mobile/src/main/java/net/activitywatch/android/parser/SessionParser.kt),
+  [`UsageStatsWatcher.kt`](mobile/src/main/java/net/activitywatch/android/watcher/UsageStatsWatcher.kt),
+  [`InteractionWatcher.kt`](mobile/src/main/java/net/activitywatch/android/watcher/InteractionWatcher.kt),
+  [`MediaWatcher.kt`](mobile/src/main/java/net/activitywatch/android/watcher/MediaWatcher.kt)
+
+- **프라이버시 모드**
+
+  지정 시간 동안 민감한 watcher의 조회·기록을 막고 해당 구간을 정리하며, 만료 예약과 빠른 설정
+  타일을 제공합니다.
+
+  주요 파일: [`privacy/`](mobile/src/main/java/net/activitywatch/android/privacy/)의 신규 Kotlin 파일 7개
+
+- **선택적 서버 전송**
+
+  사용자가 직접 설정한 서버에만 증분 전송하며, HMAC-SHA256 인증, 재시도·커서 관리, Android
+  Keystore 기반 비밀값 보호를 구현했습니다.
+
+  주요 파일: [`push/`](mobile/src/main/java/net/activitywatch/android/push/)의 신규 Kotlin 파일 6개,
+  [`PROTOCOL.md`](lt-docs/PROTOCOL.md)
+
+- **상태 점검과 수명 관리**
+
+  watcher가 실제 이벤트를 만들고 있는지 확인하는 상태 점검을 추가하고, 백그라운드 서비스·알람·작업
+  스케줄링을 연결했습니다.
+
+  주요 파일: [`WatcherHealth.kt`](mobile/src/main/java/net/activitywatch/android/watcher/WatcherHealth.kt),
+  [`BackgroundService.kt`](mobile/src/main/java/net/activitywatch/android/BackgroundService.kt),
+  [`AlarmReceiver.kt`](mobile/src/main/java/net/activitywatch/android/watcher/AlarmReceiver.kt)
+
+- **공개·배포 정리**
+
+  앱 ID와 브랜딩을 분리하고, Android 백업을 비활성화했으며, 테스트·빌드·설치·개인정보·릴리즈
+  문서와 배포 정제 스크립트를 추가했습니다.
+
+  주요 파일: [`AndroidManifest.xml`](mobile/src/main/AndroidManifest.xml), [`BUILDING.md`](BUILDING.md),
+  [`PRIVACY.md`](PRIVACY.md), [`RELEASE.md`](RELEASE.md), [`lt-docs/`](lt-docs/)
 
 회귀 테스트에는 브라우저 제목/URL 전이, 주소창 안내 문구 필터링, watcher 상태 판정을 재현한 사례가
 들어 있습니다. 상세 구조와 설계 경계는 [구조 문서](lt-docs/ARCHITECTURE.md)에서 확인할 수 있습니다.
