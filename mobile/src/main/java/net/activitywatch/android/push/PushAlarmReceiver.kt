@@ -15,10 +15,13 @@ import kotlinx.coroutines.launch
 private const val TAG = "PushAlarmReceiver"
 
 /**
- * `PushScheduler` 의 AlarmManager 폴백이 깨우는 지점.
+ * `PushScheduler` 의 AlarmManager 폴백이 배달되는 지점.
  *
  * 서비스가 OS 에 죽어 Handler 체인이 끊겨도 이 알람은 남아 전송을 이어간다.
  * `SyncAlarmReceiver` 와 같은 역할이다.
+ *
+ * ★ 알람은 non-wakeup(ELAPSED_REALTIME)이다. 잠든 폰을 깨우지 않고, 폰이 다음에 깰 때
+ *   밀린 한 번이 배달된다 (PushScheduler 주석 참조).
  */
 class PushAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {

@@ -188,6 +188,10 @@ class BackgroundService : Service() {
                 "(aw-sync 네이티브 크래시가 push 까지 죽인다 — 이 포크는 직접 push 를 쓴다)")
         }
 
+        // LT: 수집 스위치(미디어)의 처음 값을 확정한다. 새 설치 = 꺼짐, 알림 접근을 이미
+        // 허용해 쓰던 기존 설치 = 켜짐. 한 번 정하면 저장되어 다시 계산하지 않는다.
+        runCatching { net.activitywatch.android.push.LTSettings(this).settleCaptureDefaults(this) }
+
         // LT: 서버 push. 설정이 비었거나 꺼져 있으면 start() 안에서 스스로 빠진다.
         pushScheduler.start()
 

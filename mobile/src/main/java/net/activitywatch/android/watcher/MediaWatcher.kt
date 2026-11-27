@@ -1,6 +1,7 @@
 package net.activitywatch.android.watcher
 
 import android.content.ComponentName
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.media.MediaMetadata
 import android.media.session.MediaController
@@ -13,6 +14,7 @@ import android.service.notification.StatusBarNotification
 import android.util.Log
 import net.activitywatch.android.RustInterface
 import net.activitywatch.android.privacy.PrivateGate
+import net.activitywatch.android.push.LTSettings
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 import org.threeten.bp.Instant
@@ -45,6 +47,19 @@ class MediaWatcher : NotificationListenerService() {
             ) ?: return false
             // Parse colon-separated list and match exactly to avoid false positives
             return enabledListeners.split(":").any { it == flattenedComponent }
+        }
+
+        /**
+         * 스위치를 다시 켰을 때 부른다. 권한은 그대로인데 [requestUnbind] 로 연결만 끊어 둔
+         * 상태라면, 시스템에 다시 붙여 달라고 해야 한다 — 안 그러면 다음 재부팅까지 안 붙는다.
+         */
+        fun requestRebindIfGranted(context: android.content.Context) {
+            if (!isNotificationAccessGranted(context)) return
+            try {
+                NotificationListenerService.requestRebind(ComponentName(context, MediaWatcher::class.java))
+            } catch (e: Exception) {
+                Log.w(TAG, "requestRebind 실패")
+            }
         }
     }
 
@@ -105,13 +120,57 @@ class MediaWatcher : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
         Log.i(TAG, "MediaWatcher listener connected")
+        val s = LTSettings(applicationContext)
+        settings = s
+        // 업데이트 직후에는 이 서비스가 BackgroundService 보다 먼저 붙을 수 있다.
+        // 처음 값(새 설치 = 꺼짐)을 여기서도 확정한다.
+        s.settleCaptureDefaults(applicationContext)
+        if (!s.mediaCaptureEnabled) {
+            releaseListener("연결됐지만 스위치가 꺼져 있다")
+            return
+        }
+        released = false
+        s.registerListener(prefsListener)
         registerActiveSessionListener()
         pollingRunnable?.let { handler?.postDelayed(it, POLL_INTERVAL_MS) }
+    }
+
+    // ── 최소 권한: 스위치 ────────────────────────────────────────────
+    //
+    // ★ 알림 접근은 **모든 앱의 알림 내용**을 읽을 수 있는 권한이다. 이 워처는 그중
+    //   MediaSessionManager 로 **미디어 세션의 메타데이터(제목·아티스트·앨범)와 재생 상태**만
+    //   쓴다. onNotificationPosted 는 비워 두었고 알림 본문·발신자·메시지는 읽지도 저장하지도
+    //   않는다. 앞으로도 그 범위를 넘기지 않는다.
+    //
+    // 스위치를 끄면 기록을 멈추는 것에 그치지 않고 `requestUnbind()` 로 리스너 연결을 끊는다.
+    // 권한 목록에서까지 빼는 것은 앱이 할 수 없어서, 설정 화면이 알림 접근 설정으로 보낸다.
+    private var settings: LTSettings? = null
+    @Volatile private var released = false
+
+    // ★ 필드로 붙잡아 둔다 — SharedPreferences 는 리스너를 약한 참조로 든다.
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == LTSettings.KEY_CAPTURE_MEDIA && settings?.mediaCaptureEnabled == false) {
+            releaseListener("스위치가 꺼졌다")
+        }
+    }
+
+    private fun releaseListener(reason: String) {
+        released = true
+        Log.i(TAG, "미디어 수집 꺼짐 — 알림 리스너 연결을 끊는다 ($reason)")
+        settings?.unregisterListener(prefsListener)
+        unregisterAllCallbacks()
+        handler?.removeCallbacksAndMessages(null)
+        try {
+            requestUnbind()
+        } catch (e: Exception) {
+            Log.w(TAG, "requestUnbind 실패")
+        }
     }
 
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
         Log.i(TAG, "MediaWatcher listener disconnected")
+        settings?.unregisterListener(prefsListener)
         unregisterAllCallbacks()
         handler?.removeCallbacksAndMessages(null)
     }
@@ -119,6 +178,7 @@ class MediaWatcher : NotificationListenerService() {
     override fun onDestroy() {
         super.onDestroy()
         Log.i(TAG, "MediaWatcher destroyed")
+        settings?.unregisterListener(prefsListener)
         unregisterAllCallbacks()
         handler?.removeCallbacksAndMessages(null)
         handlerThread?.quitSafely()
@@ -238,6 +298,12 @@ class MediaWatcher : NotificationListenerService() {
     ) {
         val packageName = controller.packageName ?: return
 
+        // 스위치가 꺼졌으면 아무것도 만들지 않는다. requestUnbind() 가 효력을 내기 전에
+        // 들어온 콜백·폴링도 여기서 버린다.
+        if (released || settings?.mediaCaptureEnabled != true) {
+            lastEventKeys.remove(packageName)
+            return
+        }
         // 프라이빗 구간에서는 무엇을 재생 중인지 만들지 않는다.
         if (PrivateGate.isActive(applicationContext)) {
             lastEventKeys.remove(packageName)   // 풀린 뒤 첫 이벤트가 새 구간으로 시작하게

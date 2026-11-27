@@ -10,6 +10,8 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import android.util.Log
+import net.activitywatch.android.watcher.CaptureToggles
+import net.activitywatch.android.watcher.MediaWatcher
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -41,6 +43,10 @@ class LTSettings(context: Context) {
         private const val IV_BYTES = 12
 
         const val DEFAULT_PUSH_INTERVAL_MIN = 5
+
+        /** 수집 스위치 키. 워처가 변경 리스너에서 이 이름으로 거른다. */
+        const val KEY_CAPTURE_WEB = "captureWeb"
+        const val KEY_CAPTURE_MEDIA = "captureMedia"
 
         /** 한 요청에 담을 이벤트 상한. 서버 한도는 50,000 건 / 4 MB 다. */
         const val MAX_EVENTS_PER_PUSH = 5_000
@@ -74,6 +80,56 @@ class LTSettings(context: Context) {
     var lastAuthError: String?
         get() = prefs.getString("lastAuthError", null)
         set(v) = prefs.edit().putString("lastAuthError", v).apply()
+
+    // ── 수집 스위치 (최소 권한) ──────────────────────────────────────
+    //
+    // 워처(WebWatcher·MediaWatcher)도 이 prefs 를 직접 읽고, 값이 바뀌면
+    // OnSharedPreferenceChangeListener 로 곧바로 권한을 내려놓는다. 그래서 키 이름을
+    // companion 의 상수로 공개한다 — 문자열이 두 곳에서 어긋나면 스위치가 조용히 안 먹는다.
+
+    /** 웹 주소·제목 기록 (접근성). 저장한 적 없으면 켜짐 — [CaptureToggles.webEnabled]. */
+    var webCaptureEnabled: Boolean
+        get() = CaptureToggles.webEnabled(
+            if (prefs.contains(KEY_CAPTURE_WEB)) prefs.getBoolean(KEY_CAPTURE_WEB, true) else null
+        )
+        set(v) = prefs.edit().putBoolean(KEY_CAPTURE_WEB, v).apply()
+
+    /**
+     * 영상·음악 제목 기록 (알림 접근). **새 설치는 꺼짐.**
+     *
+     * 아직 정해지지 않았으면 false 를 돌려준다 — 먼저 [settleCaptureDefaults] 를 부르는 것이
+     * 원칙이고, 그걸 빠뜨린 경로라도 "몰래 켜짐" 쪽으로는 실수하지 않게 한다.
+     */
+    var mediaCaptureEnabled: Boolean
+        get() = prefs.getBoolean(KEY_CAPTURE_MEDIA, false)
+        set(v) = prefs.edit().putBoolean(KEY_CAPTURE_MEDIA, v).apply()
+
+    /**
+     * 미디어 스위치의 처음 값을 **한 번만** 정해 저장한다. 이미 정해졌으면 아무것도 안 한다.
+     *
+     * 앱 업데이트 직후에는 BackgroundService 보다 MediaWatcher 가 먼저 다시 붙을 수 있어서,
+     * 워처·서비스·설정 화면 어디서 먼저 불러도 같은 답이 나오게 여기 한 곳에 둔다.
+     */
+    fun settleCaptureDefaults(context: Context) {
+        if (prefs.contains(KEY_CAPTURE_MEDIA)) return
+        val isUpdateInstall = try {
+            val info = context.packageManager.getPackageInfo(context.packageName, 0)
+            info.firstInstallTime != info.lastUpdateTime
+        } catch (e: Exception) {
+            false
+        }
+        val granted = MediaWatcher.isNotificationAccessGranted(context)
+        val v = CaptureToggles.defaultMediaEnabled(isUpdateInstall, granted)
+        // commit — 바로 뒤에 다른 스레드의 워처가 읽는다. apply 의 지연 쓰기와 엇갈리지 않게.
+        prefs.edit().putBoolean(KEY_CAPTURE_MEDIA, v).commit()
+        Log.i(TAG, "미디어 수집 스위치 처음 값 = $v")
+    }
+
+    fun registerListener(l: SharedPreferences.OnSharedPreferenceChangeListener) =
+        prefs.registerOnSharedPreferenceChangeListener(l)
+
+    fun unregisterListener(l: SharedPreferences.OnSharedPreferenceChangeListener) =
+        prefs.unregisterOnSharedPreferenceChangeListener(l)
 
     fun isConfigured(): Boolean =
         deviceName.isNotEmpty() && serverUrl.isNotEmpty() && getSecret().isNotEmpty()

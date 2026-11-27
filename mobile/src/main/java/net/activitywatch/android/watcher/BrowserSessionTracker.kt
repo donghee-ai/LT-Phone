@@ -65,12 +65,51 @@ internal class BrowserSessionTracker(
         }
 
         lastUrlTimestamp = now()
+        // 새 세션의 활동 시각도 여기서 다시 잡는다 — 안 그러면 이전 세션의 오래된 값으로
+        // 막 시작한 세션이 곧바로 "오래됐다" 고 닫힌다.
+        lastActivityAt = lastUrlTimestamp
         lastUrl = newUrl
         lastBrowser = newBrowser
         // ★ `pendingTitle` 은 **남긴다.** 확정될 만큼 오래 안 머문 제목이므로 아직
         //   이 페이지 것이라고 볼 수 없고, URL 보다 먼저 온 새 페이지 제목일 수 있다.
         confirmedTitle = null
         return completed
+    }
+
+    // ── 세션 끝내기 ─────────────────────────────────────────────────
+    //
+    // ★ 접근성 설정에 `packageNames` 를 걸었으므로 **브라우저를 떠나는 이벤트가 안 온다.**
+    //   예전에는 "다른 앱 창으로 바뀌었다 → 세션 끝" 으로 끝냈지만, 이제 런처·카톡 같은
+    //   앱의 이벤트는 아예 서비스에 전달되지 않는다. 그래서 WebWatcher 가 화면 꺼짐·
+    //   언바인드·유튜브 창 전환 때 [endSession] 을 부르고, 그것마저 없으면 [endIfStale] 이
+    //   마지막 브라우저 이벤트로부터 시간이 너무 지난 세션을 닫는다.
+
+    /** 마지막으로 브라우저 이벤트를 본 시각. 열린 세션이 없으면 의미가 없다. */
+    private var lastActivityAt: Instant? = null
+
+    /** 브라우저에서 이벤트가 왔다 — URL 이 안 바뀌어도 "아직 보고 있다" 는 뜻이다. */
+    fun noteActivity() {
+        lastActivityAt = now()
+    }
+
+    fun hasOpenSession(): Boolean = lastUrl != null
+
+    /** 열린 세션을 지금 닫는다. 열린 세션이 없으면 null. */
+    fun endSession(): CompletedBrowserSession? = handleUrl(null, null)
+
+    /**
+     * 마지막 브라우저 이벤트로부터 [maxIdle] 이상 지났으면 세션을 닫는다.
+     *
+     * 끝 시각은 **지금**(= 마지막 이벤트 + 대략 [maxIdle])이다. 길게 잡는 편을 고른 이유:
+     * 서버 rollup 은 사용 통계의 전경 앱이 브라우저인 칸에만 웹 URL 을 붙이므로, 넘친
+     * 꼬리는 서버에서 잘려 나간다. 반대로 짧게 잘라 버린 것은 아무도 되살리지 못한다
+     * (긴 글을 스크롤 없이 읽는 동안에는 이벤트가 안 온다).
+     */
+    fun endIfStale(maxIdle: Duration): CompletedBrowserSession? {
+        if (lastUrl == null) return null
+        val at = lastActivityAt ?: lastUrlTimestamp ?: return null
+        if (Duration.between(at, now()) < maxIdle) return null
+        return endSession()
     }
 
     // Returns true when the title actually changed (so the caller can log it).

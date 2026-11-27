@@ -1,8 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  LT: 최소 권한 접근성 설정.
+
+  ★ packageNames 는 WebWatcher.KNOWN_BROWSER_PACKAGES + 유튜브(com.google.android.youtube) 와
+    **같아야 한다** (WebWatcher.ACCESSIBILITY_PACKAGES. JVM 테스트 AccessibilityConfigTest 가
+    맞춰 본다). life-trainer 서버의 config/rules.yaml `browser_apps` 도 같은 브라우저 목록이다.
+    여기서 빠진 앱의 이벤트는 서비스에 **아예 안 온다** — 다른 앱 화면은 읽지 않는다는 뜻이고,
+    동시에 "다른 앱으로 넘어갔다" 는 신호도 안 온다는 뜻이다 (세션 끝내기는 WebWatcher 참조).
+    패키지가 null 인 이벤트도 이 필터에 걸려 안 올 수 있다 (유튜브 쇼츠 감지는 기기에서 확인).
+
+  ★ 이벤트 종류
+    - typeWindowContentChanged : 주소창 글자가 바뀐다 (URL 변경)
+    - typeWindowStateChanged   : 새 화면·창이 앞에 뜬다 (유튜브로 넘어감 → 브라우저 세션 끝)
+    - typeWindowsChanged       : 창 목록·창 제목(페이지 제목)이 바뀐다
+  ★ 플래그
+    - flagRetrieveInteractiveWindows : getWindows() 로 창 제목을 읽는 데 필요하다
+    - flagReportViewIds              : url_bar 와 쇼츠의 reel_player_footer_container 를
+                                       view id 로 찾는 데 필요하다
+    flagDefault 는 아무 기능도 켜지 않는 표지라 뺐다.
+  ★ notificationTimeout 100 → 500ms. 같은 종류 이벤트를 0.5초 단위로 묶어 받는다. 주소창은
+    초당 수십 번 바뀌지만 기록은 URL 이 바뀔 때만 하고 제목 조회도 500ms 로 죄어 두었으므로
+    잃는 것이 거의 없다.
+-->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/accessibility_service_description"
+    android:packageNames="com.android.chrome,org.mozilla.firefox,com.sec.android.app.sbrowser,com.opera.browser,com.microsoft.emmx,com.google.android.youtube"
     android:accessibilityEventTypes="typeWindowContentChanged|typeWindowsChanged|typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:notificationTimeout="100"
-    android:accessibilityFlags="flagDefault|flagReportViewIds|flagRetrieveInteractiveWindows"
+    android:notificationTimeout="500"
+    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"
     android:canRetrieveWindowContent="true" />

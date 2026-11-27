@@ -1,17 +1,26 @@
 package net.activitywatch.android.watcher
 
 import android.accessibilityservice.AccessibilityService
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
+import androidx.core.content.ContextCompat
 import net.activitywatch.android.RustInterface
 import net.activitywatch.android.privacy.PrivateGate
+import net.activitywatch.android.push.LTSettings
 import org.json.JSONObject
+import org.threeten.bp.Duration
 import org.threeten.bp.Instant
 
 private fun extractTextByViewId(event: AccessibilityEvent, viewId: String): String? {
@@ -63,6 +72,38 @@ class WebWatcher : AccessibilityService() {
     private var lastShortsLookup = 0L
     private var lastShortsSeen = false
 
+    // ── 최소 권한: 세션 끝내기 · 스위치 ─────────────────────────────
+    //
+    // ★ `accessibility_service_config.xml` 의 `packageNames` 때문에 브라우저·유튜브 밖의
+    //   이벤트는 이 서비스에 **아예 안 온다.** 예전의 "다른 앱 창으로 바뀜 → 세션 끝" 은
+    //   이제 대부분 발화하지 않으므로, 세션은 다음 네 길로 닫는다:
+    //     1. 유튜브(목록 안의 비브라우저)의 TYPE_WINDOW_STATE_CHANGED
+    //     2. 화면 꺼짐 (ACTION_SCREEN_OFF — 아래 receiver)
+    //     3. onInterrupt / onUnbind
+    //     4. 마지막 브라우저 이벤트로부터 [WEB_SESSION_STALE] 가 지나면 (staleCheck)
+    //   서버 rollup 은 추가로 **사용 통계의 전경 앱이 브라우저인 칸에만** 웹 URL 을 붙인다.
+    //   그래서 4 번이 꼬리를 조금 길게 잡아도 그 꼬리는 서버에서 잘려 나간다.
+    //
+    // 세션 트래커는 접근성 콜백과 같은 **메인 스레드**에서만 만진다 (receiver·핸들러 포함).
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val staleCheck = Runnable {
+        sessionTracker.endIfStale(WEB_SESSION_STALE)?.let {
+            Log.i(TAG, "Browser session stale; ending session")
+            logBrowserEvent(it)
+        }
+    }
+    private var screenOffReceiver: BroadcastReceiver? = null
+    private var settings: LTSettings? = null
+
+    // ★ 리스너는 필드로 붙잡아 둔다. SharedPreferences 는 리스너를 **약한 참조**로 들고 있어서
+    //   람다를 바로 넘기면 GC 뒤에 스위치를 꺼도 아무 일도 안 일어난다.
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == LTSettings.KEY_CAPTURE_WEB && settings?.webCaptureEnabled == false) {
+            releaseAccessibility("스위치가 꺼졌다")
+        }
+    }
+    @Volatile private var released = false
+
     // Applies stripProtocol uniformly to whatever extractor matched, so the logged url is
     // formatted identically no matter which browser/view-variant produced it.
     private fun extractUrl(packageName: String, event: AccessibilityEvent): String? = when (packageName) {
@@ -104,14 +145,106 @@ class WebWatcher : AccessibilityService() {
         }
     }
 
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        released = false
+        val s = LTSettings(applicationContext)
+        settings = s
+        // 앱 안 스위치가 꺼져 있으면 시스템 설정에서 켰더라도 **바로 내려놓는다.**
+        // 켜기는 설정 화면(또는 온보딩)의 스위치가 먼저 값을 켠 뒤 시스템 설정으로 보낸다.
+        if (!s.webCaptureEnabled) {
+            releaseAccessibility("연결됐지만 스위치가 꺼져 있다")
+            return
+        }
+        s.registerListener(prefsListener)
+        registerScreenOffReceiver()
+    }
+
+    /**
+     * 화면이 꺼지면 열린 브라우저 세션을 닫는다.
+     *
+     * ★ `packageNames` 필터 뒤로는 "브라우저를 떠났다" 는 신호가 거의 없다. 화면 꺼짐은
+     *   폰을 내려놓는 가장 흔한 끝이고, 이걸 안 잡으면 다음에 브라우저를 열 때까지(또는
+     *   staleCheck 까지) 세션이 잠든 시간 내내 늘어난다.
+     */
+    private fun registerScreenOffReceiver() {
+        if (screenOffReceiver != null) return
+        val r = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.action != Intent.ACTION_SCREEN_OFF) return
+                lastShortsSeen = false
+                endBrowserSession("screen off")
+            }
+        }
+        // 시스템 브로드캐스트는 NOT_EXPORTED 로도 받는다 (Android 14 의 플래그 의무 대응).
+        ContextCompat.registerReceiver(
+            this, r, IntentFilter(Intent.ACTION_SCREEN_OFF), ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        screenOffReceiver = r
+    }
+
+    private fun unregisterHooks() {
+        mainHandler.removeCallbacks(staleCheck)
+        screenOffReceiver?.let { runCatching { unregisterReceiver(it) } }
+        screenOffReceiver = null
+        settings?.unregisterListener(prefsListener)
+    }
+
+    private fun endBrowserSession(reason: String) {
+        mainHandler.removeCallbacks(staleCheck)
+        // 타이머를 지웠으니 다음 브라우저 이벤트가 곧바로 다시 걸게 한다.
+        lastStaleArm = 0L
+        sessionTracker.endSession()?.let {
+            Log.i(TAG, "Ending browser session ($reason)")
+            logBrowserEvent(it)
+        }
+    }
+
+    /**
+     * 스위치가 꺼졌다 — 열린 세션을 닫고 **접근성 권한 자체를 돌려준다.**
+     *
+     * 이벤트를 무시하기만 하면 권한은 그대로 남아 시스템 설정에 "사용 중" 으로 보인다.
+     * 사용자가 끈 것은 "기록" 이 아니라 "이 앱이 화면을 읽는 것" 이므로 `disableSelf()` 로
+     * 서비스를 실제로 끈다. 다시 켜려면 시스템 접근성 설정에서 켜야 한다.
+     */
+    private fun releaseAccessibility(reason: String) {
+        if (released) return
+        released = true
+        Log.i(TAG, "웹 수집 꺼짐 — 접근성 권한을 내려놓는다 ($reason)")
+        endBrowserSession("capture disabled")
+        lastShortsSeen = false
+        unregisterHooks()
+        try {
+            disableSelf()
+        } catch (e: Exception) {
+            Log.w(TAG, "disableSelf 실패")
+        }
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        // 접근성을 끄거나 앱을 업데이트할 때 온다. 워커는 onDestroy 전까지 살아 있으므로
+        // 여기서 닫은 세션은 저장된다.
+        endBrowserSession("unbind")
+        unregisterHooks()
+        return super.onUnbind(intent)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        unregisterHooks()
         worker?.removeCallbacksAndMessages(null)
         workerThread.quitSafely()
     }
 
     // TODO: This method is called very often, which might affect performance. Future optimizations needed.
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        // 스위치가 꺼졌으면 **아무것도 읽지 않는다.** disableSelf() 가 효력을 내기 전에
+        // 들어온 이벤트도 여기서 버린다.
+        if (released) return
+        if (settings?.webCaptureEnabled == false) {
+            releaseAccessibility("이벤트 중 스위치 꺼짐 확인")
+            return
+        }
         if (shouldIgnoreEvent(event)) {
             return
         }
@@ -119,28 +252,48 @@ class WebWatcher : AccessibilityService() {
         // — 안 버리면 프라이빗이 풀릴 때 그 구간을 포함한 채로 기록된다.
         if (PrivateGate.isActive(this)) {
             sessionTracker.handleUrl(null, null)
+            mainHandler.removeCallbacks(staleCheck)
+            lastStaleArm = 0L
             lastShortsSeen = false
             return
         }
 
         val packageName = event.packageName?.toString()
-        val isKnownBrowser = packageName != null && packageName in KNOWN_BROWSER_PACKAGES
-
         val windowChanged = windowChanged(event.windowId)
         lastWindowId = event.windowId
 
-        if (!isKnownBrowser) {
+        val kind = CaptureToggles.classifyWebEvent(
+            packageName = packageName,
+            isWindowStateChanged = event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+            windowChanged = windowChanged,
+            browsers = KNOWN_BROWSER_PACKAGES
+        )
+
+        if (kind != CaptureToggles.WebEvent.BROWSER) {
             // for some browsers like Firefox event.packageName can be null (no extractor matched)
             // but we are still on the same window
-            if (windowChanged) {
-                Log.i(TAG, "Window changed away from a tracked browser; ending session")
-                handleUrl(null, newBrowser = null)
+            if (kind == CaptureToggles.WebEvent.LEFT_BROWSER && sessionTracker.hasOpenSession()) {
+                endBrowserSession("left browser window")
             }
             // ★ `packageName` 으로 거르지 않는다 — **유튜브 이벤트는 그 값이 null 로 온다**
             //   (같은 이유로 위 Firefox 주석이 있다). 대신 창의 실제 패키지를 안에서 본다.
+            // ★ 단, `packageNames` 필터를 건 뒤로는 프레임워크가 **패키지가 null 인 이벤트를
+            //   아예 안 보낼 수 있다** (필터가 이벤트의 packageName 으로 비교한다). 그래도
+            //   유튜브가 패키지를 단 이벤트(창 전환·내용 변경)는 오므로 여기서 쇼츠를 본다.
+            //   쇼츠가 실제 폰에서 여전히 잡히는지는 **기기에서 확인해야 한다.**
             maybeLogShorts()
 
             return
+        }
+
+        // 브라우저가 살아 있다는 표시. 2초에 한 번만 타이머를 다시 건다 — 이벤트마다
+        // removeCallbacks/postDelayed 를 부르는 것도 공짜는 아니다.
+        sessionTracker.noteActivity()
+        val nowUp = SystemClock.uptimeMillis()
+        if (nowUp - lastStaleArm > STALE_REARM_MS) {
+            lastStaleArm = nowUp
+            mainHandler.removeCallbacks(staleCheck)
+            mainHandler.postDelayed(staleCheck, WEB_SESSION_STALE.toMillis() + STALE_REARM_MS)
         }
 
         try {
@@ -161,6 +314,8 @@ class WebWatcher : AccessibilityService() {
             Log.e(TAG, "Failed to process accessibility event")
         }
     }
+
+    private var lastStaleArm = 0L
 
     private fun windowChanged(windowId: Int): Boolean = windowId != lastWindowId
 
@@ -326,12 +481,27 @@ class WebWatcher : AccessibilityService() {
         worker?.post { ri?.heartbeatHelper(bucket_id, session.start, session.duration.seconds.toDouble(), data, 1.0) }
     }
 
-    override fun onInterrupt() {}
+    // 시스템이 피드백을 끊으라고 할 때 온다. 세션을 열어 둔 채 두면 이 다음 이벤트가
+    // 언제 올지 모르므로 닫는다.
+    override fun onInterrupt() {
+        endBrowserSession("interrupt")
+    }
 
     companion object {
         private const val TITLE_LOOKUP_INTERVAL_MS = 500L
         private const val SHORTS_LOOKUP_INTERVAL_MS = 2_000L
-        private const val YOUTUBE_PACKAGE = "com.google.android.youtube"
+
+        /**
+         * 브라우저 이벤트가 이만큼 없으면 세션을 닫는다 ([BrowserSessionTracker.endIfStale]).
+         *
+         * 서버 rollup 칸이 10분이라 그에 맞췄다. 짧으면 스크롤 없이 긴 글을 읽는 동안
+         * 세션이 쪼개지고, 길면 브라우저를 떠난 뒤의 꼬리가 길어진다 (서버가 잘라 준다).
+         */
+        internal val WEB_SESSION_STALE: Duration = Duration.ofMinutes(10)
+
+        /** stale 타이머를 다시 거는 최소 간격. 이벤트마다 Handler 를 만지지 않으려고. */
+        private const val STALE_REARM_MS = 2_000L
+        internal const val YOUTUBE_PACKAGE = "com.google.android.youtube"
 
         /** 쇼츠 플레이어에만 있는 id. 일반 시청 화면과 구별하는 관문이다. */
         private const val SHORTS_FOOTER_VIEW_ID = "$YOUTUBE_PACKAGE:id/reel_player_footer_container"
@@ -345,6 +515,16 @@ class WebWatcher : AccessibilityService() {
          *  유튜브 자신이 한국어 UI 에서도 탭 이름을 "Shorts" 로 쓰므로 그대로 따른다. */
         private const val SHORTS_TITLE = "Shorts"
 
+        /**
+         * ★ **세 곳이 같은 목록이어야 한다:**
+         *   1. 여기 (URL 을 읽을 브라우저)
+         *   2. `res/xml/accessibility_service_config.xml` 의 `android:packageNames`
+         *      (여기에 유튜브 [YOUTUBE_PACKAGE] 를 더한 것 — 이 밖의 앱 이벤트는 서비스에 안 온다)
+         *   3. life-trainer 서버의 `config/rules.yaml` `browser_apps` (rollup 이 웹 URL 을
+         *      붙일 칸을 고르는 기준)
+         *   여기에 브라우저를 더하고 xml 을 안 고치면 그 브라우저의 이벤트는 **조용히 안 온다.**
+         *   xml 의 packageNames 는 리소스라 상수를 참조할 수 없어서 한 곳으로 못 모은다.
+         */
         internal val KNOWN_BROWSER_PACKAGES = setOf(
             "com.android.chrome",
             "org.mozilla.firefox",
@@ -352,5 +532,8 @@ class WebWatcher : AccessibilityService() {
             "com.opera.browser",
             "com.microsoft.emmx"
         )
+
+        /** 접근성 설정 `packageNames` 와 같아야 하는 목록. JVM 테스트가 xml 과 맞춰 본다. */
+        internal val ACCESSIBILITY_PACKAGES: Set<String> = KNOWN_BROWSER_PACKAGES + YOUTUBE_PACKAGE
     }
 }

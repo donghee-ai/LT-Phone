@@ -157,9 +157,12 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
             val pendingIntent = getUpdateIntent(context)
 
             // Start exact alarm that fires once
+            // ★ LT: non-wakeup(ELAPSED_REALTIME). 화면이 꺼져 있으면 위젯은 아무도 안 본다 —
+            //   예전에는 _WAKEUP + AllowWhileIdle 로 Doze 중에도 5분마다 폰을 깨워 안 보이는
+            //   위젯을 다시 그렸다. 이제 폰이 깰 때 밀린 한 번이 배달되어 곧바로 갱신된다.
             try {
                 alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    AlarmManager.ELAPSED_REALTIME,
                     SystemClock.elapsedRealtime() + UPDATE_INTERVAL_MS,
                     pendingIntent
                 )
@@ -168,7 +171,7 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
                 // In Android 14+, SCHEDULE_EXACT_ALARM might be revoked by user
                 Log.e(TAG, "Cannot schedule exact alarm without permission; falling back to inexact")
                 alarmManager.setInexactRepeating(
-                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    AlarmManager.ELAPSED_REALTIME,
                     SystemClock.elapsedRealtime() + UPDATE_INTERVAL_MS,
                     UPDATE_INTERVAL_MS,
                     pendingIntent

@@ -18,6 +18,7 @@ import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
+import net.activitywatch.android.push.LTSettings
 import net.activitywatch.android.watcher.MediaWatcher
 import net.activitywatch.android.watcher.UsageStatsWatcher
 import androidx.core.net.toUri
@@ -153,6 +154,9 @@ class PermissionsFragment : Fragment() {
                 .setTitle(R.string.accessibility_disclosure_title)
                 .setMessage(R.string.accessibility_disclosure_message)
                 .setPositiveButton(R.string.accessibility_disclosure_agree) { _, _ ->
+                    // LT: 앱 안 스위치를 먼저 켠다. 꺼진 채로 접근성을 켜면 WebWatcher 가
+                    // 연결되자마자 스스로 꺼진다 (최소 권한 스위치).
+                    LTSettings(requireContext()).webCaptureEnabled = true
                     startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                 }
                 .setNegativeButton(R.string.accessibility_disclosure_decline, null)
@@ -168,6 +172,9 @@ class PermissionsFragment : Fragment() {
         }
         // Handle grant notification access (for media watcher)
         view.findViewById<Button>(R.id.btnGrantNotificationPermission).setOnClickListener {
+            // LT: 미디어 스위치는 새 설치에서 꺼짐이다. 여기서 권한을 주러 가는 것은
+            // 켜겠다는 뜻이므로 스위치도 켠다 — 안 그러면 허용하자마자 리스너가 스스로 끊는다.
+            LTSettings(requireContext()).mediaCaptureEnabled = true
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
     }

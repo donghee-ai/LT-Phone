@@ -89,7 +89,10 @@ class UsageStatsWatcher constructor(val context: Context) {
             val accessibilityManager = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
             val accessibilityServices = accessibilityManager.getEnabledAccessibilityServiceList(
                 AccessibilityEvent.TYPES_ALL_MASK)
-            return accessibilityServices.any { it.id.contains(context.packageName) }
+            // ★ `contains` 로 비교하지 않는다. 디버그 빌드(`…awphone.debug`)와 릴리즈(`…awphone`)를
+            //   나란히 설치하면 릴리즈가 디버그의 서비스 id 를 자기 것으로 착각한다.
+            //   id 는 `패키지/클래스` 꼴이므로 `패키지/` 로 시작하는지 본다.
+            return accessibilityServices.any { it.id.startsWith(context.packageName + "/") }
         }
     }
 

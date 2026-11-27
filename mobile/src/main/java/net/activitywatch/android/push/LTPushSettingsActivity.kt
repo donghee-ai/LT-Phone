@@ -6,12 +6,16 @@ package net.activitywatch.android.push
 
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
 import android.util.Log
 import android.view.MenuItem
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import kotlinx.coroutines.CoroutineScope
@@ -20,6 +24,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import net.activitywatch.android.BackgroundService
 import net.activitywatch.android.R
+import net.activitywatch.android.watcher.CaptureToggles
+import net.activitywatch.android.watcher.MediaWatcher
+import net.activitywatch.android.watcher.UsageStatsWatcher
 
 /**
  * 서버 push 설정 화면.
@@ -39,6 +46,10 @@ class LTPushSettingsActivity : AppCompatActivity() {
     private lateinit var etSecret: EditText
     private lateinit var etInterval: EditText
     private lateinit var tvStatus: TextView
+    private lateinit var switchWeb: SwitchCompat
+    private lateinit var switchMedia: SwitchCompat
+    private lateinit var tvWebState: TextView
+    private lateinit var tvMediaState: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,7 +76,140 @@ class LTPushSettingsActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_save).setOnClickListener { save(showToast = true) }
         findViewById<Button>(R.id.btn_test).setOnClickListener { testNow() }
 
+        setupCaptureToggles()
         refreshStatus()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 시스템 설정에서 돌아왔을 수 있다 — 권한 상태를 다시 읽는다.
+        refreshCaptureState()
+    }
+
+    // ── 수집 스위치 ──────────────────────────────────────────────────
+    //
+    // 스위치는 **누르는 즉시** 적용한다 (저장 버튼과 무관). 권한을 내려놓는 일이라
+    // "저장을 깜빡해서 아직 읽고 있었다" 가 있으면 안 된다.
+    //
+    // 끄기: prefs 값을 바꾸면 같은 프로세스의 WebWatcher·MediaWatcher 가 변경 리스너로
+    //       듣고 disableSelf() / requestUnbind() 로 스스로 연결을 끊는다.
+    // 켜기: 값을 먼저 켠 뒤 시스템 설정으로 보낸다. ★ 순서가 중요하다 — 값이 꺼진 채로
+    //       접근성을 켜면 WebWatcher 가 연결되자마자 다시 스스로 꺼 버린다.
+
+    private val uiHandler = Handler(Looper.getMainLooper())
+
+    private fun setupCaptureToggles() {
+        settings.settleCaptureDefaults(this)
+        switchWeb = findViewById(R.id.switch_capture_web)
+        switchMedia = findViewById(R.id.switch_capture_media)
+        tvWebState = findViewById(R.id.tv_capture_web_state)
+        tvMediaState = findViewById(R.id.tv_capture_media_state)
+
+        findViewById<Button>(R.id.btn_open_accessibility).setOnClickListener {
+            openSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+        }
+        findViewById<Button>(R.id.btn_open_notification_access).setOnClickListener {
+            openSettings(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+        }
+        refreshCaptureState()
+    }
+
+    private fun onWebToggled(on: Boolean) {
+        settings.webCaptureEnabled = on
+        if (on) {
+            if (!UsageStatsWatcher.isAccessibilityAllowed(this)) {
+                confirmThenOpen(
+                    R.string.lt_capture_web_dialog_title,
+                    R.string.lt_capture_web_dialog_message,
+                    Settings.ACTION_ACCESSIBILITY_SETTINGS
+                ) {
+                    // 취소 — 켜지 않은 것으로 되돌린다.
+                    settings.webCaptureEnabled = false
+                    refreshCaptureState()
+                }
+            }
+        } else {
+            Toast.makeText(this, R.string.lt_capture_web_released, Toast.LENGTH_SHORT).show()
+            // disableSelf() 는 비동기라 바로 다시 읽으면 아직 "허용됨" 으로 보인다.
+            uiHandler.postDelayed({ refreshCaptureState() }, 1_000L)
+        }
+        refreshCaptureState()
+    }
+
+    private fun onMediaToggled(on: Boolean) {
+        settings.mediaCaptureEnabled = on
+        if (on) {
+            if (MediaWatcher.isNotificationAccessGranted(this)) {
+                // 권한은 그대로인데 꺼 둘 때 연결만 끊었다 — 다시 붙여 달라고 한다.
+                MediaWatcher.requestRebindIfGranted(this)
+            } else {
+                confirmThenOpen(
+                    R.string.lt_capture_media_dialog_title,
+                    R.string.lt_capture_media_dialog_message,
+                    Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS
+                ) {
+                    settings.mediaCaptureEnabled = false
+                    refreshCaptureState()
+                }
+            }
+        } else {
+            Toast.makeText(this, R.string.lt_capture_media_released, Toast.LENGTH_SHORT).show()
+        }
+        refreshCaptureState()
+    }
+
+    private fun confirmThenOpen(titleRes: Int, messageRes: Int, action: String, onCancel: () -> Unit) {
+        AlertDialog.Builder(this)
+            .setTitle(titleRes)
+            .setMessage(messageRes)
+            .setPositiveButton(R.string.lt_capture_dialog_go) { _, _ -> openSettings(action) }
+            .setNegativeButton(R.string.lt_capture_dialog_cancel) { _, _ -> onCancel() }
+            .setOnCancelListener { onCancel() }
+            .show()
+    }
+
+    private fun openSettings(action: String) {
+        try {
+            startActivity(Intent(action))
+        } catch (e: Exception) {
+            // 일부 제조사 설정 앱은 이 화면을 안 연다. 조용히 끝나지 않게 남긴다.
+            Log.w(TAG, "설정 화면을 열지 못했다")
+            Toast.makeText(this, "설정 화면을 열 수 없다 — 시스템 설정에서 직접 찾아 주세요", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /** 스위치와 상태 줄을 prefs·권한 실제 값에 맞춘다. 리스너를 떼고 맞춰야 되먹임이 없다. */
+    private fun refreshCaptureState() {
+        if (!::switchWeb.isInitialized) return
+        val webOn = settings.webCaptureEnabled
+        val mediaOn = settings.mediaCaptureEnabled
+        val webGranted = UsageStatsWatcher.isAccessibilityAllowed(this)
+        val mediaGranted = MediaWatcher.isNotificationAccessGranted(this)
+
+        switchWeb.setOnCheckedChangeListener(null)
+        switchMedia.setOnCheckedChangeListener(null)
+        switchWeb.isChecked = webOn
+        switchMedia.isChecked = mediaOn
+        switchWeb.setOnCheckedChangeListener { _, on -> onWebToggled(on) }
+        switchMedia.setOnCheckedChangeListener { _, on -> onMediaToggled(on) }
+
+        tvWebState.text = when (CaptureToggles.grantState(webOn, webGranted)) {
+            CaptureToggles.GrantState.ACTIVE -> getString(R.string.lt_capture_state_active)
+            CaptureToggles.GrantState.NEEDS_GRANT -> getString(R.string.lt_capture_state_needs_grant)
+            CaptureToggles.GrantState.OFF -> getString(R.string.lt_capture_state_off)
+            CaptureToggles.GrantState.OFF_STILL_GRANTED -> getString(R.string.lt_capture_web_state_off_granted)
+        }
+        tvMediaState.text = when (CaptureToggles.grantState(mediaOn, mediaGranted)) {
+            CaptureToggles.GrantState.ACTIVE -> getString(R.string.lt_capture_state_active)
+            CaptureToggles.GrantState.NEEDS_GRANT -> getString(R.string.lt_capture_state_needs_grant)
+            CaptureToggles.GrantState.OFF -> getString(R.string.lt_capture_state_off)
+            CaptureToggles.GrantState.OFF_STILL_GRANTED -> getString(R.string.lt_capture_media_state_off_granted)
+        }
+    }
+
+    override fun onDestroy() {
+        uiHandler.removeCallbacksAndMessages(null)
+        super.onDestroy()
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
